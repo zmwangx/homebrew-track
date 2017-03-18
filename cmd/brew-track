@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+
+#: usage: brew-track [-h] [--color {auto,always,never}]
+#:                   [--pager {auto,always,never}] [--debug] [--issue | --pr]
+#:                   [--open | --closed] [--title-only | --title-and-body-only]
+#:                   keywords [keywords ...]
+#:
+#: Search for Homebrew/homebrew-core issues and prs.
+#:
+#: positional arguments:
+#:   keywords              search keyword(s)
+#:
+#: optional arguments:
+#:   -h, --help            show this help message and exit
+#:   --color {auto,always,never}
+#:                         whether to color the output
+#:   --pager {auto,always,never}
+#:                         whether to use a pager; the default is 'auto', where a
+#:                         pager is only used if the output is longer than a
+#:                         screenful
+#:   --debug               print debugging information
+#:   --issue               restrict to issues
+#:   --pr                  restrict to prs
+#:   --open                restrict to open issues/prs
+#:   --closed              restrcit to closed issues/prs
+#:   --title-only          restrict search to titles
+#:   --title-and-body-only
+#:                         restrict search to titles and bodies
+
+import argparse
+import io
+import logging
+import os
+import subprocess
+import sys
+
+logger = logging.getLogger('brew-track')
+logging.basicConfig(format='[%(levelname)s] %(name)s: %(message)s')
+if sys.version_info < (3, 6):
+    logger.error('Python 3.6 or later required; please run `brew install python3`')
+    sys.exit(1)
+
+try:
+    import github3
+except ImportError:
+    logger.error('package github3 not found; please run `pip install github3`')
+    sys.exit(1)
+
+# API session
+session = None
+# argparse.Namespace
+options = None
+
+DUMB_TERMS = ('dumb', 'emacs')
+GREEN = '\x1b[32m'
+RED = '\x1b[31m'
+RESET = '\x1b[0m'
+
+# Patch github3.issues.issue.Issue.__str__
+def github3_issue_str(self):
+    url = self.html_url
+    title = self.title.replace('\b', '')  # strip backspace characters
+    if options.color:
+        color = GREEN if self.state == 'open' else RED
+        return f'{color}{url:55}{RESET} {title}'
+    else:
+        return f'{url:55} {title}'
+
+github3.issues.issue.Issue.__str__ = github3_issue_str
+
+def parse_command_line():
+    global options
+
+    parser = argparse.ArgumentParser(description='Search for Homebrew/homebrew-core issues and prs.')
+    add = parser.add_argument
+    add('keywords', nargs='+',
+        help='search keyword(s)')
+    add('--color', choices=['auto', 'always', 'never'], default='auto',
+        help='whether to color the output')
+    add('--pager', choices=['auto', 'always', 'never'], default='auto',
+        help='''whether to use a pager; the default is 'auto', where a pager is
+        only used if the output is longer than a screenful''')
+    add('--debug', action='store_true',
+        help='print debugging information')
+
+    type_group = parser.add_mutually_exclusive_group()
+    add = type_group.add_argument
+    add('--issue', action='store_true',
+        help='restrict to issues')
+    add('--pr', action='store_true',
+        help='restrict to prs')
+
+    state_group = parser.add_mutually_exclusive_group()
+    add = state_group.add_argument
+    add('--open', action='store_true',
+        help='restrict to open issues/prs')
+    add('--closed', action='store_true',
+        help='restrcit to closed issues/prs')
+
+    scope_group = parser.add_mutually_exclusive_group()
+    add = scope_group.add_argument
+    add('--title-only', action='store_true',
+        help='restrict search to titles')
+    add('--title-and-body-only', action='store_true',
+        help='restrict search to titles and bodies')
+
+    options = parser.parse_args()
+
+    if options.color == 'always':
+        options.color = True
+    elif options.color == 'never':
+        options.color = False
+    else:
+        options.color = sys.stdout.isatty() and os.getenv('TERM') not in DUMB_TERMS
+
+    if options.debug:
+        logger.setLevel(logging.DEBUG)
+        github3_logger = logging.getLogger('github3')
+        github3_logger.setLevel(logging.DEBUG)
+
+    options.type = None
+    if options.issue:
+        options.type = 'issue'
+    elif options.pr:
+        options.type = 'pr'
+
+    options.state = None
+    if options.open:
+        options.state = 'open'
+    elif options.closed:
+        options.state = 'closed'
+
+    options.scope = None
+    if options.title_only:
+        options.scope = 'title'
+    elif options.title_and_body_only:
+        options.scope = 'title,body'
+
+def init_api_session():
+    global session
+    token = os.getenv('HOMEBREW_GITHUB_API_TOKEN', None)
+    if token:
+        session = github3.login(token=token)
+    else:
+        session = github3.GitHub()
+
+def search_and_print():
+    qualifiers = {
+        'repo': 'Homebrew/homebrew-core',
+        'in': options.scope,
+        'state': options.state,
+        'type': options.type,
+    }
+    query = ' '.join(options.keywords + [f'{key}:{val}' for key, val in sorted(qualifiers.items()) if val])
+    search_results = session.search_issues(query, sort='created')
+    lines = [str(result.issue) + '\n' for result in search_results]
+    output = ''.join(lines)
+
+    _, terminal_rows = os.get_terminal_size()
+    if (sys.stdout.isatty() and os.getenv('TERM') not in DUMB_TERMS and
+        (options.pager == 'always' or (options.pager == 'auto' and len(lines) > terminal_rows))):
+        # Based on pydoc.pipepager from https://github.com/python/cpython/blob/master/Lib/pydoc.py
+        pager_cmd = os.getenv('PAGER') or 'less'
+        pager = subprocess.Popen(pager_cmd, shell=True, stdin=subprocess.PIPE)
+        try:
+            with io.TextIOWrapper(pager.stdin) as pipe:
+                try:
+                    pipe.write(output)
+                except KeyboardInterrupt:
+                    pass
+        except OSError:
+            pass
+        while True:
+            try:
+                pager.wait()
+                break
+            except KeyboardInterrupt:
+                pass
+    else:
+        sys.stdout.write(output)
+
+def main():
+    parse_command_line()
+    init_api_session()
+    search_and_print()
+
+if __name__ == '__main__':
+    main()
