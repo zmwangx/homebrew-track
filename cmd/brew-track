@@ -59,7 +59,7 @@ RESET = '\x1b[0m'
 # Patch github3.issues.issue.Issue.__str__
 def github3_issue_str(self):
     url = self.html_url
-    title = self.title.replace('\b', '')  # strip backspace characters
+    title = self.title.strip().replace('\b', '')  # strip backspace characters
     if options.color:
         color = GREEN if self.state == 'open' else RED
         return f'{color}{url:55}{RESET} {title}'
