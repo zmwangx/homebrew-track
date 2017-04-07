@@ -54,17 +54,20 @@ options = None
 DUMB_TERMS = ('dumb', 'emacs')
 GREEN = '\x1b[32m'
 RED = '\x1b[31m'
+BLUE = '\x1b[34m'
 RESET = '\x1b[0m'
 
 # Patch github3.issues.issue.Issue.__str__
+# https://github3py.readthedocs.io/en/master/issues.html#github3.issues.issue.Issue
 def github3_issue_str(self):
     url = self.html_url
     title = self.title.strip().replace('\b', '')  # strip backspace characters
+    author = self.user.login
     if options.color:
         color = GREEN if self.state == 'open' else RED
-        return f'{color}{url:55}{RESET} {title}'
+        return f'{color}{url:55}{RESET} {title}  {BLUE}@{author}{RESET}'
     else:
-        return f'{url:55} {title}'
+        return f'{url:55} {title}  @{author}'
 
 github3.issues.issue.Issue.__str__ = github3_issue_str
 
