@@ -163,9 +163,16 @@ def search_and_print():
     lines = [str(result.issue) + '\n' for result in search_results]
     output = ''.join(lines)
 
-    _, terminal_rows = os.get_terminal_size()
-    if (sys.stdout.isatty() and os.getenv('TERM') not in DUMB_TERMS and
-        (options.pager == 'always' or (options.pager == 'auto' and len(lines) > terminal_rows))):
+    try:
+        _, terminal_rows = os.get_terminal_size()
+    except OSError:
+        terminal_rows = -1
+
+    is_non_dumb_terminal = sys.stdout.isatty() and os.getenv('TERM') not in DUMB_TERMS
+    always_use_pager = options.pager == 'always'
+    auto_use_pager = options.pager == 'auto'
+    output_longer_than_terminal = terminal_rows != -1 and len(lines) > terminal_rows
+    if (is_non_dumb_terminal and (always_use_pager or (auto_use_pager and output_longer_than_terminal))):
         # Based on pydoc.pipepager from https://github.com/python/cpython/blob/master/Lib/pydoc.py
         pager_cmd = os.getenv('PAGER') or 'less'
         pager = subprocess.Popen(pager_cmd, shell=True, stdin=subprocess.PIPE)
