@@ -2,6 +2,19 @@
 
 Search homebrew/core's issue/pr trackers from the command line.
 
+## Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+
+- [Dependencies](#dependencies)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Screenshots](#screenshots)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Dependencies
 
 - Python 3.6 or later (`brew install python3`);
